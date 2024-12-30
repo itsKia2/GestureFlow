@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 from collections import deque
+import numpy as np
 
 import os
 
@@ -27,7 +28,6 @@ canvas = None
 capture = cv2.VideoCapture(0);
 while capture.isOpened():
     ret, frame = capture.read()
-
     if not ret:
         break
    
@@ -71,16 +71,13 @@ while capture.isOpened():
         h, w, _ = frame.shape
         cx, cy = int(index_finger_tip.x * w), int(index_finger_tip.y * h)
 
-        # tracking_index.appendleft((cx, cy))
-        # cv2.line(image, (prev_x, prev_y), (cx, cy), (255, 0, 0), thickness=5)
+        tracking_index.appendleft((cx, cy))
 
-        # Draw a line from the previous position to the current position
-        if prev_x is not None and prev_y is not None:
-            cv2.line(image, (prev_x, prev_y), (cx, cy), (255, 0, 0), thickness=5)
-
-        prev_x, prev_y = cx, cy
-    else:
-        prev_x, prev_y = None, None
+    for i in range (1, len(tracking_index)):
+        if tracking_index[i - 1] is None or tracking_index[i] is None:
+            continue
+        thick = int(np.sqrt(len(tracking_index) / float(i + 1)) * 4.5)
+        cv2.line(image, tracking_index[i - 1], tracking_index[i], (255, 0, 0), thick)
 
     # Display the resulting frame
     image = cv2.flip(image, 1)
