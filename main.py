@@ -1,6 +1,8 @@
 import cv2
-import os
 import mediapipe as mp
+from collections import deque
+
+import os
 
 # Grabbing the Holistic Model from Mediapipe and
 # Initializing the Model
@@ -16,12 +18,26 @@ mp_hands = mp.solutions.hands
 hand_landmark_drawing_spec = mp_drawing.DrawingSpec(thickness=5, circle_radius=5)
 hand_connection_drawing_spec = mp_drawing.DrawingSpec(thickness=10, circle_radius=10)
 
+# tracking feature
+tracking_index = deque(maxlen=50)
+prev_x, prev_y = None, None
+# Create a blank canvas for drawing
+canvas = None
+
 capture = cv2.VideoCapture(0);
 while capture.isOpened():
     ret, frame = capture.read()
+
+    if not ret:
+        break
+   
     frame = cv2.resize(frame, (1000, 750))
+
+    if canvas is None:
+        canvas = frame.copy() * 0
+
+     # frame = cv2.flip(frame, 1)
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    frame = cv2.flip(frame, 1)
 
     # Making predictions using holistic model
     # To improve performance, optionally mark the image as not writeable to
@@ -30,23 +46,6 @@ while capture.isOpened():
     results = holistic_model.process(image)
     image.flags.writeable = True
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-
-    # Drawing the Facial Landmarks
-    # mp_drawing.draw_landmarks(
-    #   image,
-    #   results.face_landmarks,
-    #   mp_holistic.FACEMESH_CONTOURS,
-    #   mp_drawing.DrawingSpec(
-    #     color=(255,0,255),
-    #     thickness=1,
-    #     circle_radius=1
-    #   ),
-    #   mp_drawing.DrawingSpec(
-    #     color=(0,255,255),
-    #     thickness=1,
-    #     circle_radius=1
-    #   )
-    # )
 
     # Drawing Left hand Land Marks
     mp_drawing.draw_landmarks(
@@ -62,8 +61,30 @@ while capture.isOpened():
       mp_holistic.HAND_CONNECTIONS
     )
 
-    # Display the resulting image
-    cv2.imshow("Facial and Hand Landmarks", image)
+    # checking if right hand index finger visible
+    if results.right_hand_landmarks:
+        index_finger_tip = results.right_hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+        if 0 <= index_finger_tip.x <= 1 and 0 <= index_finger_tip.y <= 1:
+            print("Index finger of right hand is visible at:", index_finger_tip.x, index_finger_tip.y)
+
+        # Get the normalized coordinates
+        h, w, _ = frame.shape
+        cx, cy = int(index_finger_tip.x * w), int(index_finger_tip.y * h)
+
+        # tracking_index.appendleft((cx, cy))
+        # cv2.line(image, (prev_x, prev_y), (cx, cy), (255, 0, 0), thickness=5)
+
+        # Draw a line from the previous position to the current position
+        if prev_x is not None and prev_y is not None:
+            cv2.line(image, (prev_x, prev_y), (cx, cy), (255, 0, 0), thickness=5)
+
+        prev_x, prev_y = cx, cy
+    else:
+        prev_x, prev_y = None, None
+
+    # Display the resulting frame
+    image = cv2.flip(image, 1)
+    cv2.imshow("GestureFlow", image)
 
     # Enter key 'q' to break the loop
     if cv2.waitKey(5) & 0xFF == ord('q'):
