@@ -3,12 +3,11 @@ import mediapipe as mp
 from collections import deque
 import numpy as np
 
-import os
-
 # Grabbing the Holistic Model from Mediapipe and
 # Initializing the Model
 mp_holistic = mp.solutions.holistic
 holistic_model = mp_holistic.Holistic(
+    model_complexity=2,
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
@@ -21,9 +20,6 @@ hand_connection_drawing_spec = mp_drawing.DrawingSpec(thickness=10, circle_radiu
 
 # tracking feature
 tracking_index = deque(maxlen=50)
-prev_x, prev_y = None, None
-# Create a blank canvas for drawing
-canvas = None
 
 capture = cv2.VideoCapture(0);
 while capture.isOpened():
@@ -31,12 +27,7 @@ while capture.isOpened():
     if not ret:
         break
    
-    frame = cv2.resize(frame, (1000, 750))
-
-    if canvas is None:
-        canvas = frame.copy() * 0
-
-     # frame = cv2.flip(frame, 1)
+    frame = cv2.resize(frame, (800, 600))
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     # Making predictions using holistic model
@@ -44,7 +35,7 @@ while capture.isOpened():
     # pass by reference.
     image.flags.writeable = False
     results = holistic_model.process(image)
-    image.flags.writeable = True
+    # image.flags.writeable = True
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
     # Drawing Left hand Land Marks
@@ -64,8 +55,6 @@ while capture.isOpened():
     # checking if right hand index finger visible
     if results.right_hand_landmarks:
         index_finger_tip = results.right_hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-        if 0 <= index_finger_tip.x <= 1 and 0 <= index_finger_tip.y <= 1:
-            print("Index finger of right hand is visible at:", index_finger_tip.x, index_finger_tip.y)
 
         # Get the normalized coordinates
         h, w, _ = frame.shape
@@ -91,3 +80,6 @@ while capture.isOpened():
 # Release the capture and destroy all windows
 capture.release()
 cv2.destroyAllWindows()
+
+def getCoords(results, frame):
+    pass
