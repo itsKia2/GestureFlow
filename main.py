@@ -31,6 +31,67 @@ def drawTracking(image, tracking):
         thick = int(np.sqrt(len(tracking) / float(i + 1)) * 4.5)
         cv2.line(image, tracking[i - 1], tracking[i], (255, 0, 0), thick)
 
+def thumbIndexDetected(image, distance_threshold, indexCoords, thumbCoords):
+    distance = math.sqrt((indexCoords[0] - thumbCoords[0]) ** 2 + (indexCoords[1] - thumbCoords[1]) ** 2)
+    if distance < distance_threshold:
+        # Get the bounding box for the thumb and index finger
+        top_left = (min(thumbCoords[0], indexCoords[0]), min(thumbCoords[1], indexCoords[1]))
+        bottom_right = (max(thumbCoords[0], indexCoords[0]), max(thumbCoords[1], indexCoords[1]))
+
+        # Increase the size of the box by a margin (expand the box to cover more area)
+        margin = 75  # You can adjust this value to make the box bigger or smaller
+        top_left = (top_left[0] - margin, top_left[1] - margin)
+        bottom_right = (bottom_right[0] + margin, bottom_right[1] + margin)
+
+        cv2.rectangle(image, top_left, bottom_right, (0, 0, 255), 2)
+
+def calculate_distance(landmark1, landmark2, frame):
+    h, w, _ = frame.shape
+    x1, y1 = int(landmark1.x * w), int(landmark1.y * h)
+    x2, y2 = int(landmark2.x * w), int(landmark2.y * h)
+    return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+# Function to detect fist
+def fistDetected(hand_landmarks, frame, image):
+    # List of fingertips and their respective bases
+    fingertip_indices = [
+        mp_hands.HandLandmark.INDEX_FINGER_TIP,
+        mp_hands.HandLandmark.MIDDLE_FINGER_TIP,
+        mp_hands.HandLandmark.RING_FINGER_TIP,
+        mp_hands.HandLandmark.PINKY_TIP,
+    ]
+    finger_base_indices = [
+        mp_hands.HandLandmark.INDEX_FINGER_MCP,
+        mp_hands.HandLandmark.MIDDLE_FINGER_MCP,
+        mp_hands.HandLandmark.RING_FINGER_MCP,
+        mp_hands.HandLandmark.PINKY_MCP,
+    ]
+
+    # Threshold for distance (adjust based on frame size or calibration)
+    threshold = 30  # Pixels, depends on video resolution
+
+    for tip, base in zip(fingertip_indices, finger_base_indices):
+        distance = calculate_distance(
+            hand_landmarks.landmark[tip], hand_landmarks.landmark[base], frame
+        )
+        if distance > threshold:
+            return False  # If any finger is extended, it's not a fist
+
+    # draw green box
+    h, w, _ = frame.shape
+    margin = 20
+
+    # Get all x and y coordinates of landmarks
+    x_coords = [int(landmark.x * w) for landmark in hand_landmarks.landmark]
+    y_coords = [int(landmark.y * h) for landmark in hand_landmarks.landmark]
+    # Find the min and max of the coordinates
+    x_min, x_max = max(0, min(x_coords) - margin), min(w, max(x_coords) + margin)
+    y_min, y_max = max(0, min(y_coords) - margin), min(h, max(y_coords) + margin)
+
+    # Draw the bounding box
+    cv2.rectangle(image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 3)
+    return True
+
 # Grabbing the Holistic Model from Mediapipe and
 # Initializing the Model
 mp_holistic = mp.solutions.holistic
@@ -91,21 +152,14 @@ while capture.isOpened():
 
     # CHECK IF INDEX AND THUMB ARE CONNECTED
     if thumbCoords is not None and indexCoords is not None:
-        distance = math.sqrt((indexCoords[0] - thumbCoords[0]) ** 2 + (indexCoords[1] - thumbCoords[1]) ** 2)
-        if distance < distance_threshold:
-            # Get the bounding box for the thumb and index finger
-            top_left = (min(thumbCoords[0], indexCoords[0]), min(thumbCoords[1], indexCoords[1]))
-            bottom_right = (max(thumbCoords[0], indexCoords[0]), max(thumbCoords[1], indexCoords[1]))
+        thumbIndexDetected(image, distance_threshold, indexCoords, thumbCoords)
 
-            # Increase the size of the box by a margin (expand the box to cover more area)
-            margin = 75  # You can adjust this value to make the box bigger or smaller
-            top_left = (top_left[0] - margin, top_left[1] - margin)
-            bottom_right = (bottom_right[0] + margin, bottom_right[1] + margin)
-
-            cv2.rectangle(image, top_left, bottom_right, (0, 0, 255), 2)
+    # HOW TO DETECT FIST
+    if results.right_hand_landmarks:
+        fistDetected(results.right_hand_landmarks, frame, image)
 
     # optional finger tracking
-    drawTracking(image, tracking_index)
+    # drawTracking(image, tracking_index)
     # drawTracking(image, tracking_thumb)
 
     # Display the resulting frame
