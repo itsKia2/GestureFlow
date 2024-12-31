@@ -10,9 +10,9 @@ import math
 def getCoords(cond, mode, frame):
     # checking if right hand index finger visible
     if cond:
-        if mode == 1:
+        if mode == 1: # right hand index finger
             point = results.right_hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-        elif mode == 2:
+        elif mode == 2: # right hand thumb
             point = results.right_hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
         else:
             return None
@@ -39,7 +39,7 @@ def thumbIndexDetected(image, distance_threshold, indexCoords, thumbCoords):
         bottom_right = (max(thumbCoords[0], indexCoords[0]), max(thumbCoords[1], indexCoords[1]))
 
         # Increase the size of the box by a margin (expand the box to cover more area)
-        margin = 75  # You can adjust this value to make the box bigger or smaller
+        margin = 75
         top_left = (top_left[0] - margin, top_left[1] - margin)
         bottom_right = (bottom_right[0] + margin, bottom_right[1] + margin)
 
@@ -77,10 +77,9 @@ def fistDetected(hand_landmarks, frame, image):
         if distance > threshold:
             return False  # If any finger is extended, it's not a fist
 
-    # draw green box
+    # Draw green box to indicate fist
     h, w, _ = frame.shape
     margin = 20
-
     # Get all x and y coordinates of landmarks
     x_coords = [int(landmark.x * w) for landmark in hand_landmarks.landmark]
     y_coords = [int(landmark.y * h) for landmark in hand_landmarks.landmark]
@@ -88,7 +87,6 @@ def fistDetected(hand_landmarks, frame, image):
     x_min, x_max = max(0, min(x_coords) - margin), min(w, max(x_coords) + margin)
     y_min, y_max = max(0, min(y_coords) - margin), min(h, max(y_coords) + margin)
 
-    # Draw the bounding box
     cv2.rectangle(image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 3)
     return True
 
@@ -96,7 +94,7 @@ def fistDetected(hand_landmarks, frame, image):
 # Initializing the Model
 mp_holistic = mp.solutions.holistic
 holistic_model = mp_holistic.Holistic(
-    model_complexity=2,
+    model_complexity=1,
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
@@ -108,9 +106,10 @@ hand_landmark_drawing_spec = mp_drawing.DrawingSpec(thickness=5, circle_radius=5
 hand_connection_drawing_spec = mp_drawing.DrawingSpec(thickness=10, circle_radius=10)
 
 # tracking feature
-tracking_index = deque(maxlen=50)
-tracking_thumb = deque(maxlen=50)
-distance_threshold = 50
+tracking_index = deque(maxlen=40)
+tracking_thumb = deque(maxlen=40)
+# distance between thumb and index finger
+distance_threshold = 35
 
 capture = cv2.VideoCapture(0);
 while capture.isOpened():
@@ -158,7 +157,7 @@ while capture.isOpened():
     if results.right_hand_landmarks:
         fistDetected(results.right_hand_landmarks, frame, image)
 
-    # optional finger tracking
+    # Optional finger tracking
     # drawTracking(image, tracking_index)
     # drawTracking(image, tracking_thumb)
 
