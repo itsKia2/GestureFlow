@@ -1,49 +1,6 @@
 import cv2
 import mediapipe as mp
-from collections import deque
 import numpy as np
-import math
-
-# this is for tracking tho
-# it returns coords which get used to draw lines
-# MODES -> 1 (right index) // 2 (left index) // 3 (right thumb)
-def getCoords(cond, mode, frame):
-    # checking if right hand index finger visible
-    if cond:
-        if mode == 1: # right hand index finger
-            point = results.right_hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-        elif mode == 2: # right hand thumb
-            point = results.right_hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
-        else:
-            return None
-
-        # Get the normalized coordinates
-        h, w, _ = frame.shape
-        cx, cy = int(point.x * w), int(point.y * h)
-        return ((cx, cy))
-    else:
-        return None
-
-def drawTracking(image, tracking):
-    for i in range (1, len(tracking)):
-        if tracking[i - 1] is None or tracking[i] is None:
-            continue
-        thick = int(np.sqrt(len(tracking) / float(i + 1)) * 4.5)
-        cv2.line(image, tracking[i - 1], tracking[i], (255, 0, 0), thick)
-
-def thumbIndexDetected(image, distance_threshold, indexCoords, thumbCoords):
-    distance = math.sqrt((indexCoords[0] - thumbCoords[0]) ** 2 + (indexCoords[1] - thumbCoords[1]) ** 2)
-    if distance < distance_threshold:
-        # Get the bounding box for the thumb and index finger
-        top_left = (min(thumbCoords[0], indexCoords[0]), min(thumbCoords[1], indexCoords[1]))
-        bottom_right = (max(thumbCoords[0], indexCoords[0]), max(thumbCoords[1], indexCoords[1]))
-
-        # Increase the size of the box by a margin (expand the box to cover more area)
-        margin = 75
-        top_left = (top_left[0] - margin, top_left[1] - margin)
-        bottom_right = (bottom_right[0] + margin, bottom_right[1] + margin)
-
-        cv2.rectangle(image, top_left, bottom_right, (0, 0, 255), 2)
 
 def calculate_distance(landmark1, landmark2, frame):
     h, w, _ = frame.shape
@@ -51,65 +8,98 @@ def calculate_distance(landmark1, landmark2, frame):
     x2, y2 = int(landmark2.x * w), int(landmark2.y * h)
     return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
-# Function to detect fist
-def fistDetected(hand_landmarks, frame, image):
-    # List of fingertips and their respective bases
-    fingertip_indices = [
-        mp_hands.HandLandmark.INDEX_FINGER_TIP,
-        mp_hands.HandLandmark.MIDDLE_FINGER_TIP,
-        mp_hands.HandLandmark.RING_FINGER_TIP,
-        mp_hands.HandLandmark.PINKY_TIP,
-    ]
-    finger_base_indices = [
-        mp_hands.HandLandmark.INDEX_FINGER_MCP,
-        mp_hands.HandLandmark.MIDDLE_FINGER_MCP,
-        mp_hands.HandLandmark.RING_FINGER_MCP,
-        mp_hands.HandLandmark.PINKY_MCP,
-    ]
-
-    # Threshold for distance (adjust based on frame size or calibration)
-    threshold = 30  # Pixels, depends on video resolution
-
-    for tip, base in zip(fingertip_indices, finger_base_indices):
-        distance = calculate_distance(
-            hand_landmarks.landmark[tip], hand_landmarks.landmark[base], frame
-        )
-        if distance > threshold:
-            return False  # If any finger is extended, it's not a fist
-
-    # Draw green box to indicate fist
-    h, w, _ = frame.shape
-    margin = 20
-    # Get all x and y coordinates of landmarks
-    x_coords = [int(landmark.x * w) for landmark in hand_landmarks.landmark]
-    y_coords = [int(landmark.y * h) for landmark in hand_landmarks.landmark]
-    # Find the min and max of the coordinates
-    x_min, x_max = max(0, min(x_coords) - margin), min(w, max(x_coords) + margin)
-    y_min, y_max = max(0, min(y_coords) - margin), min(h, max(y_coords) + margin)
-
-    cv2.rectangle(image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 3)
-    return True
-
 # Grabbing the Holistic Model from Mediapipe and
 # Initializing the Model
 mp_holistic = mp.solutions.holistic
 holistic_model = mp_holistic.Holistic(
-    model_complexity=1,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
+    model_complexity=2,
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7
 )
+
+def displayText(image, text):
+    # Set the font, size, and color
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 1
+    color = (255, 255, 255)  # White color for text
+    thickness = 2
+    # Get the dimensions of the text box
+    text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+    # Calculate the position for top-right alignment
+    x = image.shape[1] - text_size[0] - 10  # Image width minus text width and some padding
+    y = text_size[1] + 10  # Slight padding from the top
+    # Add the text to the image
+    cv2.putText(image, text, (x, y), font, font_scale, color, thickness)
+
+previous_paper_contour = None
+def findPaperWarp(frame):
+    global previous_paper_contour
+    # Convert to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # Apply Gaussian blur
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    # Detect edges using Canny
+    edges = cv2.Canny(blurred, 50, 150)
+    # Find contours
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Initialize variables for the largest rectangular contour
+    paper_contour = None
+    max_area = 0
+
+    for contour in contours:
+        # Approximate the contour to reduce the number of points
+        epsilon = 0.02 * cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+
+        # Check if the contour is rectangular and large enough
+        if len(approx) == 4 and cv2.contourArea(approx) > 10000:  # Adjust area threshold
+            area = cv2.contourArea(approx)
+            if area > max_area:
+                max_area = area
+                paper_contour = approx
+
+    # If a paper-like contour is found or previous contour exists
+    if paper_contour is not None:
+        previous_paper_contour = paper_contour
+    elif previous_paper_contour is not None:
+        # Use the previous contour if the new one is not found
+        paper_contour = previous_paper_contour
+
+    # If a paper-like contour is found
+    if paper_contour is not None:
+        # Draw the contour boundaries on the frame
+        cv2.polylines(frame, [paper_contour], isClosed=True, color=(0, 255, 0), thickness=2)
+
+        # Perform perspective transformation
+        points = paper_contour.reshape(4, 2)
+
+        # Sort points based on the sum of the x and y coordinates to order top-left, top-right, bottom-right, bottom-left
+        points = sorted(points, key=lambda x: x[0] + x[1])  # top left smallest sum
+        top_left, top_right, bottom_left, bottom_right = points
+
+        # Define the destination points for the warp
+        width, height = 640, 480  # Target dimensions for keyboard paper
+        dest_points = np.array([
+            [0, 0],
+            [width - 1, 0],
+            [width - 1, height - 1],
+            [0, height - 1]
+        ], dtype="float32")
+
+        # Compute the perspective transform matrix and apply it
+        matrix = cv2.getPerspectiveTransform(np.array([top_left, top_right, bottom_right, bottom_left], dtype="float32"), dest_points)
+        warped = cv2.warpPerspective(frame, matrix, (width, height))
+
+        return frame, warped  # Return both original frame and warped paper view
+    else:
+        return frame, None  # Return None if no paper is found
 
 # Initializing the drawing utils for drawing the facial landmarks on image
 mp_drawing = mp.solutions.drawing_utils
 mp_hands = mp.solutions.hands
 hand_landmark_drawing_spec = mp_drawing.DrawingSpec(thickness=5, circle_radius=5)
 hand_connection_drawing_spec = mp_drawing.DrawingSpec(thickness=10, circle_radius=10)
-
-# tracking feature
-tracking_index = deque(maxlen=40)
-tracking_thumb = deque(maxlen=40)
-# distance between thumb and index finger
-distance_threshold = 35
 
 capture = cv2.VideoCapture(0);
 while capture.isOpened():
@@ -142,28 +132,15 @@ while capture.isOpened():
       mp_holistic.HAND_CONNECTIONS
     )
 
-    indexCoords = getCoords(results.right_hand_landmarks, 1, frame)
-    if indexCoords is not None:
-        tracking_index.appendleft(indexCoords)
-    thumbCoords = getCoords(results.right_hand_landmarks, 2, frame)
-    if thumbCoords is not None:
-        tracking_thumb.appendleft(thumbCoords)
-
-    # CHECK IF INDEX AND THUMB ARE CONNECTED
-    if thumbCoords is not None and indexCoords is not None:
-        thumbIndexDetected(image, distance_threshold, indexCoords, thumbCoords)
-
-    # HOW TO DETECT FIST
-    if results.right_hand_landmarks:
-        fistDetected(results.right_hand_landmarks, frame, image)
-
-    # Optional finger tracking
-    # drawTracking(image, tracking_index)
-    # drawTracking(image, tracking_thumb)
+    # find paper
+    image_boundaries, result = findPaperWarp(frame)
 
     # Display the resulting frame
     image = cv2.flip(image, 1)
+
     cv2.imshow("GestureFlow", image)
+    # Warped paper view
+    cv2.imshow("Warped Paper", result)
 
     # Enter key 'q' to break the loop
     if cv2.waitKey(5) & 0xFF == ord('q'):
